@@ -107,7 +107,7 @@ struct Args {
     )]
     ddb_table_name: Option<String>,
 
-    /// DynamoDB table name (required when storage_backend is ddb)
+    /// Redis URL (required when storage_backend is redis)
     #[arg(
         long,
         short = 'u',
@@ -137,8 +137,8 @@ struct Args {
     audit_log_format: Option<String>,
 
     /// Trust Registry only admin operations. use didcomm
-    #[arg(long, short = 'x', default_value = "false")]
-    only_admin_operations: Option<bool>,
+    #[arg(long, short = 'x', default_value = "ExplicitDeny")]
+    acl_mode: Option<String>,
 }
 
 fn insert_env_vars(
@@ -573,7 +573,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // DIDComm mediator configuration
     let mediator_did = args.mediator_did.unwrap_or("".to_string());
     let admin_dids = args.admin_dids.unwrap_or("".to_string());
-    let only_admin_operations = args.only_admin_operations.unwrap_or(false);
+    let acl_mode = args.acl_mode.unwrap_or("ExplicitDeny".to_string());
 
     // Request to generate new Trust Registry DID
     let did_method = args.did_method.unwrap_or("".to_string());
@@ -678,21 +678,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
             println!();
         }
 
-        if let Some(config) = &profile_config
-            && !only_admin_operations
-        {
-            println!("Configuring mediator ACLs for Trust Registry DID...");
-            // Configure ACLs in the mediator for the Trust Registry DID
-            set_acl(
-                &config.alias,
-                &config.did,
-                &mediator_did,
-                config.secrets.clone(),
-            )
-            .await;
-            println!("✓ Configured Trust Registry on mediator.");
-        }
-
         // Configure test Trust Registry
         setup_test_trust_registry(mediator_did.clone(), test_in_pipeline).await?;
     } else {
@@ -704,10 +689,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     server_vars.insert("PROFILE_CONFIG".to_string(), profile.clone());
     server_vars.insert("MEDIATOR_DID".to_string(), mediator_did.clone());
     server_vars.insert("ADMIN_DIDS".to_string(), admin_dids.clone());
-    server_vars.insert(
-        "ONLY_ADMIN_OPERATIONS".to_string(),
-        only_admin_operations.to_string(),
-    );
+    server_vars.insert("ACL_MODE".to_string(), acl_mode.to_string());
 
     // Storage configuration
     println!();

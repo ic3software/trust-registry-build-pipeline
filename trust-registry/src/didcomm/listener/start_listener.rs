@@ -1,19 +1,25 @@
 use tracing::{debug, error, warn};
 
 use crate::didcomm::listener::*;
+use affinidi_tdk::messaging::protocols::mediator::acls::AccessListModeType;
 
 impl<H: MessageHandler> Listener<H> {
     pub async fn start_listening(
         self: Arc<Self>,
         config: Arc<DidcommConfig>,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        let _ = self
-            .clone()
-            .set_public_acls_mode(config.only_admin_operations)
-            .await
-            .inspect_err(|e| {
-                warn!("Failed to change ACL mode to public. Error: {}", e);
-            });
+        let _ = if config.acl_mode == AccessListModeType::ExplicitAllow {
+            self.set_private_acl_mode().await
+        } else {
+            self.set_public_acl_mode().await
+        }
+        .inspect_err(|e| {
+            warn!(
+                "Failed to set ACL mode for Trust Registry DID. Error: {}",
+                e
+            );
+        });
+
         let cloned_self = self.clone();
         cloned_self.spawn_periodic_offline_sync().await;
 
