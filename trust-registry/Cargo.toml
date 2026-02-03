@@ -38,6 +38,7 @@ serde_dynamo.workspace = true
 uuid.workspace = true
 redis.workspace = true
 thiserror.workspace = true
+reqwest.workspace = true
 
 did-peer = { version = "0.7.5", optional = true }
 affinidi-did-key = { version = "0.1.4", optional = true }
@@ -45,10 +46,10 @@ didwebvh-rs = { version = "0.1", optional = true }
 url = "2.5"
 clap = { version = "4.5", features = ["derive"] }
 crossterm = "0.29"
+urlencoding = "2.1.3"
 
 [dev-dependencies]
 tempfile.workspace = true
-reqwest.workspace = true
 serial_test.workspace = true
 tower.workspace = true
 

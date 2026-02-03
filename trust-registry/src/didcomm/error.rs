@@ -17,4 +17,13 @@ pub enum DIDCommError {
 
     #[error("Missing ATM instance")]
     MissingATM,
+
+    #[error("Trust Registry DID document is unreachable at /.well-known/did.json")]
+    UnreachableDidDocument,
+
+    #[error("Invalid DID format")]
+    InvalidDid,
+
+    #[error("HTTP request error: {0}")]
+    HttpRequest(#[from] reqwest::Error),
 }
