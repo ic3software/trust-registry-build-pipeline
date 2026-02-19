@@ -1,10 +1,10 @@
 #![cfg(feature = "dev-tools")]
-use affinidi_did_key::DIDKey;
 use affinidi_tdk::{
     TDK,
     common::{config::TDKConfig, profiles::TDKProfile},
     did_common::{
-        Document,
+        DID as DIDCommon, Document, PeerCreateKey, PeerKeyPurpose, PeerService,
+        PeerServiceEndpoint,
         service::{Endpoint, Service},
         verification_method::{VerificationMethod, VerificationRelationship},
     },
@@ -15,14 +15,10 @@ use affinidi_tdk::{
             mediator::acls::{AccessListModeType, MediatorACLSet},
         },
     },
-    secrets_resolver::secrets::{KeyType, Secret, SecretMaterial},
+    secrets_resolver::secrets::{Secret, SecretMaterial},
 };
 
 use clap::Parser;
-use did_peer::{
-    DIDPeer, DIDPeerCreateKeys, DIDPeerKeyType, DIDPeerKeys, DIDPeerService, PeerServiceEndPoint,
-    PeerServiceEndPointLong,
-};
 use didwebvh_rs::{DIDWebVHState, parameters::Parameters, url::WebVHURL};
 use serde_json::Value;
 use serde_json::json;
@@ -266,37 +262,36 @@ fn create_keys() -> (Secret, Secret) {
 }
 
 pub fn create_did(mediator_did: String) -> (String, Vec<Secret>) {
-    let (e_did_key, mut e_secp256k1_key) = DIDKey::generate(KeyType::Secp256k1).unwrap();
-    let (v_did_key, mut v_p256) = DIDKey::generate(KeyType::P256).unwrap();
+    let mut v_p256_key = Secret::generate_p256(None, None).expect("Couldn't create P256 secret");
+    let mut e_secp256k1_key =
+        Secret::generate_secp256k1(None, None).expect("Couldn't create Secp256k1 secret");
+
+    let v_multibase = v_p256_key
+        .get_public_keymultibase()
+        .expect("Couldn't get verification key multibase");
+    let e_multibase = e_secp256k1_key
+        .get_public_keymultibase()
+        .expect("Couldn't get encryption key multibase");
 
     let keys = vec![
-        DIDPeerCreateKeys {
-            purpose: DIDPeerKeys::Verification,
-            type_: Some(DIDPeerKeyType::P256),
-            public_key_multibase: Some(v_did_key[8..].to_string()),
-        },
-        DIDPeerCreateKeys {
-            purpose: DIDPeerKeys::Encryption,
-            type_: Some(DIDPeerKeyType::Secp256k1),
-            public_key_multibase: Some(e_did_key[8..].to_string()),
-        },
+        PeerCreateKey::from_multibase(PeerKeyPurpose::Verification, v_multibase),
+        PeerCreateKey::from_multibase(PeerKeyPurpose::Encryption, e_multibase),
     ];
 
-    let services = Some(vec![DIDPeerService {
+    let services = Some(vec![PeerService {
         id: None,
-        _type: "dm".into(),
-        service_end_point: PeerServiceEndPoint::Long(PeerServiceEndPointLong::URI(
-            mediator_did.to_string(),
-        )),
+        type_: "dm".into(),
+        endpoint: PeerServiceEndpoint::Uri(mediator_did.to_string()),
     }]);
 
     let (did_peer, _) =
-        DIDPeer::create_peer_did(&keys, services.as_ref()).expect("Failed to create did:peer");
-    v_p256.id = [did_peer.as_str(), "#key-1"].concat();
-    e_secp256k1_key.id = [did_peer.as_str(), "#key-2"].concat();
+        DIDCommon::generate_peer(&keys, services.as_deref()).expect("Failed to create did:peer");
+    let did_peer_str = did_peer.to_string();
 
-    let secrets_json = vec![v_p256, e_secp256k1_key];
-    (did_peer, secrets_json)
+    v_p256_key.id = [did_peer_str.as_str(), "#key-1"].concat();
+    e_secp256k1_key.id = [did_peer_str.as_str(), "#key-2"].concat();
+
+    (did_peer_str, vec![v_p256_key, e_secp256k1_key])
 }
 
 pub fn setup_did_peer_tr(mediator_did: String) -> (String, Vec<Secret>) {

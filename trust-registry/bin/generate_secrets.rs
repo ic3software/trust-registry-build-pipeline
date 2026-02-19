@@ -1,9 +1,11 @@
 #![cfg(feature = "dev-tools")]
-use affinidi_did_key::DIDKey;
 use affinidi_tdk::{
     TDK,
     common::{config::TDKConfig, profiles::TDKProfile},
-    did_common::one_or_many::OneOrMany,
+    did_common::{
+        DID as DIDCommon, PeerCreateKey, PeerKeyPurpose, PeerService, PeerServiceEndpoint,
+        PeerServiceEndpointLong, one_or_many::OneOrMany,
+    },
     messaging::{
         profiles::ATMProfile,
         protocols::{
@@ -11,11 +13,7 @@ use affinidi_tdk::{
             mediator::acls::{AccessListModeType, MediatorACLSet},
         },
     },
-    secrets_resolver::secrets::{KeyType, Secret},
-};
-use did_peer::{
-    DIDPeer, DIDPeerCreateKeys, DIDPeerKeyType, DIDPeerKeys, DIDPeerService, PeerServiceEndPoint,
-    PeerServiceEndPointLong, PeerServiceEndPointLongMap,
+    secrets_resolver::secrets::Secret,
 };
 use serde_json::json;
 use sha256::digest;
@@ -141,58 +139,58 @@ pub async fn set_acl(alias: &str, did: &str, mediator_did: &str, secrets: Vec<Se
 }
 
 pub fn create_did(service: Option<Vec<String>>, auth_service: bool) -> (String, Vec<Secret>) {
-    let (e_did_key, mut e_secp256k1_key) = DIDKey::generate(KeyType::Secp256k1).unwrap();
-    let (v_did_key, mut v_p256) = DIDKey::generate(KeyType::P256).unwrap();
+    let mut v_p256_key = Secret::generate_p256(None, None).expect("Couldn't create P256 secret");
+    let mut e_secp256k1_key =
+        Secret::generate_secp256k1(None, None).expect("Couldn't create Secp256k1 secret");
+
+    let v_multibase = v_p256_key
+        .get_public_keymultibase()
+        .expect("Couldn't get verification key multibase");
+    let e_multibase = e_secp256k1_key
+        .get_public_keymultibase()
+        .expect("Couldn't get encryption key multibase");
 
     let keys = vec![
-        DIDPeerCreateKeys {
-            purpose: DIDPeerKeys::Verification,
-            type_: Some(DIDPeerKeyType::P256),
-            public_key_multibase: Some(v_did_key[8..].to_string()),
-        },
-        DIDPeerCreateKeys {
-            purpose: DIDPeerKeys::Encryption,
-            type_: Some(DIDPeerKeyType::Secp256k1),
-            public_key_multibase: Some(e_did_key[8..].to_string()),
-        },
+        PeerCreateKey::from_multibase(PeerKeyPurpose::Verification, v_multibase),
+        PeerCreateKey::from_multibase(PeerKeyPurpose::Encryption, e_multibase),
     ];
 
     let mut services = service.as_ref().map(|service| {
-        let endpoints = service.iter().map(|uri| PeerServiceEndPointLongMap {
-            uri: uri.to_string(),
-            accept: vec!["didcomm/v2".into()],
-            routing_keys: vec![],
-        });
-        vec![DIDPeerService {
+        let endpoints: Vec<PeerServiceEndpointLong> = service
+            .iter()
+            .map(|uri| PeerServiceEndpointLong {
+                uri: uri.to_string(),
+                accept: vec!["didcomm/v2".into()],
+                routing_keys: vec![],
+            })
+            .collect();
+
+        vec![PeerService {
             id: None,
-            _type: "dm".into(),
-            service_end_point: PeerServiceEndPoint::Long(PeerServiceEndPointLong::Map(
-                OneOrMany::Many(endpoints.collect()),
-            )),
+            type_: "dm".into(),
+            endpoint: PeerServiceEndpoint::Long(OneOrMany::Many(endpoints)),
         }]
     });
 
     if auth_service {
         let service = service.as_ref().unwrap();
 
-        let auth_service = DIDPeerService {
+        let auth_svc = PeerService {
             id: Some("#auth".into()),
-            _type: "Authentication".into(),
-            service_end_point: PeerServiceEndPoint::Long(PeerServiceEndPointLong::URI(
-                [&service[0], "/authenticate"].concat(),
-            )),
+            type_: "Authentication".into(),
+            endpoint: PeerServiceEndpoint::Uri([&service[0], "/authenticate"].concat()),
         };
-        services.as_mut().unwrap().push(auth_service);
+        services.as_mut().unwrap().push(auth_svc);
     }
-    let services = services.as_ref();
 
     let (did_peer, _) =
-        DIDPeer::create_peer_did(&keys, services).expect("Failed to create did:peer");
-    v_p256.id = [did_peer.as_str(), "#key-1"].concat();
-    e_secp256k1_key.id = [did_peer.as_str(), "#key-2"].concat();
+        DIDCommon::generate_peer(&keys, services.as_deref()).expect("Failed to create did:peer");
+    let did_peer_str = did_peer.to_string();
 
-    let secrets_json = vec![v_p256, e_secp256k1_key];
-    (did_peer, secrets_json)
+    v_p256_key.id = [did_peer_str.as_str(), "#key-1"].concat();
+    e_secp256k1_key.id = [did_peer_str.as_str(), "#key-2"].concat();
+
+    (did_peer_str, vec![v_p256_key, e_secp256k1_key])
 }
 
 #[tokio::main]

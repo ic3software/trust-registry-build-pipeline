@@ -143,10 +143,21 @@ impl TrustRecordIds {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "lowercase")]
 pub enum RecordType {
     Authorization,
     Recognition,
+}
+
+impl<'de> Deserialize<'de> for RecordType {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        s.parse::<RecordType>().map_err(serde::de::Error::custom)
+    }
 }
 
 impl std::str::FromStr for RecordType {
@@ -154,7 +165,7 @@ impl std::str::FromStr for RecordType {
 
     fn from_str(s: &str) -> Result<Self, TrustRecordError> {
         match s.to_lowercase().as_str() {
-            "assertion" => Ok(Self::Authorization),
+            "authorization" => Ok(Self::Authorization),
             "recognition" => Ok(Self::Recognition),
             _ => Err(TrustRecordError::InvalidRecordType),
         }
@@ -164,7 +175,7 @@ impl std::str::FromStr for RecordType {
 impl fmt::Display for RecordType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Authorization => write!(f, "assertion"),
+            Self::Authorization => write!(f, "authorization"),
             Self::Recognition => write!(f, "recognition"),
         }
     }
@@ -420,7 +431,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(record.entity_id().as_str(), "entity-123");
-        assert_eq!(record.record_type().to_string(), "assertion");
+        assert_eq!(record.record_type().to_string(), "authorization");
     }
 
     #[test]
@@ -702,7 +713,7 @@ mod tests {
         use std::str::FromStr;
 
         assert_eq!(
-            RecordType::from_str("assertion").unwrap(),
+            RecordType::from_str("authorization").unwrap(),
             RecordType::Authorization
         );
         assert_eq!(
@@ -714,7 +725,7 @@ mod tests {
 
     #[test]
     fn test_record_type_display() {
-        assert_eq!(RecordType::Authorization.to_string(), "assertion");
+        assert_eq!(RecordType::Authorization.to_string(), "authorization");
         assert_eq!(RecordType::Recognition.to_string(), "recognition");
     }
 }
