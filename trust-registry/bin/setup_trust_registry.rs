@@ -1,12 +1,14 @@
 #![cfg(feature = "dev-tools")]
+// The `Protocols` API is deprecated in affinidi-messaging-sdk 0.18 in favour of
+// ATM accessor methods; migrating this dev-only tool is a separate cleanup.
+#![allow(deprecated)]
 use affinidi_tdk::{
     TDK,
     common::{config::TDKConfig, profiles::TDKProfile},
     did_common::{
         DID as DIDCommon, Document, PeerCreateKey, PeerKeyPurpose, PeerService,
-        PeerServiceEndpoint,
-        service::{Endpoint, Service},
-        verification_method::{VerificationMethod, VerificationRelationship},
+        PeerServiceEndpoint, ServiceBuilder, VerificationMethodBuilder, service::Endpoint,
+        verification_method::VerificationRelationship,
     },
     messaging::{
         profiles::ATMProfile,
@@ -253,7 +255,7 @@ fn create_keys() -> (Secret, Secret) {
     let mut verification_key =
         Secret::generate_p256(None, None).expect("Failed to generate P256 key");
     let mut encryption_key =
-        Secret::generate_secp256k1(None, None).expect("Failed to generate Secp256k1 key");
+        Secret::generate_p256(None, None).expect("Failed to generate P256 key");
 
     verification_key.id = verification_key.get_public_keymultibase().unwrap();
     encryption_key.id = encryption_key.get_public_keymultibase().unwrap();
@@ -263,13 +265,12 @@ fn create_keys() -> (Secret, Secret) {
 
 pub fn create_did(mediator_did: String) -> (String, Vec<Secret>) {
     let mut v_p256_key = Secret::generate_p256(None, None).expect("Couldn't create P256 secret");
-    let mut e_secp256k1_key =
-        Secret::generate_secp256k1(None, None).expect("Couldn't create Secp256k1 secret");
+    let mut e_p256_key = Secret::generate_p256(None, None).expect("Couldn't create P256 secret");
 
     let v_multibase = v_p256_key
         .get_public_keymultibase()
         .expect("Couldn't get verification key multibase");
-    let e_multibase = e_secp256k1_key
+    let e_multibase = e_p256_key
         .get_public_keymultibase()
         .expect("Couldn't get encryption key multibase");
 
@@ -289,9 +290,9 @@ pub fn create_did(mediator_did: String) -> (String, Vec<Secret>) {
     let did_peer_str = did_peer.to_string();
 
     v_p256_key.id = [did_peer_str.as_str(), "#key-1"].concat();
-    e_secp256k1_key.id = [did_peer_str.as_str(), "#key-2"].concat();
+    e_p256_key.id = [did_peer_str.as_str(), "#key-2"].concat();
 
-    (did_peer_str, vec![v_p256_key, e_secp256k1_key])
+    (did_peer_str, vec![v_p256_key, e_p256_key])
 }
 
 pub fn setup_did_peer_tr(mediator_did: String) -> (String, Vec<Secret>) {
@@ -346,21 +347,22 @@ pub fn setup_did_web_tr(
         Value::String(verification_key.id.clone()),
     );
     let v_key_id = Url::parse(&[tr_did.to_string(), "#key-1".to_string()].concat())?;
-    did_document.verification_method.push(VerificationMethod {
-        id: v_key_id.clone(),
-        type_: "Multikey".to_string(),
-        controller: Url::parse(&tr_did.to_string())?,
-        revoked: None,
-        expires: None,
-        property_set: property_set.clone(),
-    });
+    did_document.verification_method.push(
+        VerificationMethodBuilder::from_urls(
+            v_key_id.clone(),
+            "Multikey".to_string(),
+            Url::parse(&tr_did.to_string())?,
+        )
+        .properties(property_set.clone())
+        .build(),
+    );
     did_document
         .assertion_method
-        .push(VerificationRelationship::Reference(v_key_id.clone()));
+        .push(VerificationRelationship::Reference(v_key_id.to_string()));
 
     did_document
         .authentication
-        .push(VerificationRelationship::Reference(v_key_id.clone()));
+        .push(VerificationRelationship::Reference(v_key_id.to_string()));
 
     // Encryption Key
     property_set.insert(
@@ -368,28 +370,48 @@ pub fn setup_did_web_tr(
         Value::String(encryption_key.id.clone()),
     );
     let e_key_id = Url::parse(&[tr_did.to_string(), "#key-2".to_string()].concat())?;
-    did_document.verification_method.push(VerificationMethod {
-        id: e_key_id.clone(),
-        type_: "Multikey".to_string(),
-        controller: Url::parse(&tr_did.to_string())?,
-        revoked: None,
-        expires: None,
-        property_set: property_set.clone(),
-    });
+    did_document.verification_method.push(
+        VerificationMethodBuilder::from_urls(
+            e_key_id.clone(),
+            "Multikey".to_string(),
+            Url::parse(&tr_did.to_string())?,
+        )
+        .properties(property_set.clone())
+        .build(),
+    );
     did_document
         .key_agreement
-        .push(VerificationRelationship::Reference(e_key_id.clone()));
+        .push(VerificationRelationship::Reference(e_key_id.to_string()));
 
     // Add service endpoints to the DID Document
     let endpoint = Endpoint::Url(Url::from_str(&mediator_did.clone())?);
-    did_document.service.push(Service {
-        id: Some(Url::parse(
-            &[tr_did.to_string(), "#service".to_string()].concat(),
-        )?),
-        type_: vec!["DIDCommMessaging".to_string()],
-        property_set: HashMap::new(),
-        service_endpoint: endpoint,
-    });
+    did_document.service.push(
+        ServiceBuilder::new("DIDCommMessaging", endpoint)
+            .id_url(Url::parse(
+                &[tr_did.to_string(), "#service".to_string()].concat(),
+            )?)
+            .build(),
+    );
+
+    // Optionally advertise TSP capability. The `#tsp` service (type
+    // "TSPTransport") points at the mediator DID, mirroring the DIDComm
+    // indirection: the real transport URL lives in the mediator's DID document.
+    // Only advertised when the operator runs the `tsp`-featured server (opt-in
+    // via TR_ADVERTISE_TSP=true), so the Trust Registry never claims a transport
+    // it cannot service.
+    if std::env::var("TR_ADVERTISE_TSP")
+        .map(|v| v == "true")
+        .unwrap_or(false)
+    {
+        let tsp_endpoint = Endpoint::Url(Url::from_str(&mediator_did.clone())?);
+        did_document.service.push(
+            ServiceBuilder::new("TSPTransport", tsp_endpoint)
+                .id_url(Url::parse(
+                    &[tr_did.to_string(), "#tsp".to_string()].concat(),
+                )?)
+                .build(),
+        );
+    }
 
     if did_method == "webvh" {
         // Create the WebVH Parameters

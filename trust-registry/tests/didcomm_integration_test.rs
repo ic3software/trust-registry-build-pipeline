@@ -85,6 +85,10 @@ async fn get_test_context() -> (AtmTestContext, Arc<TestConfig>) {
     )
     .await;
 
+    println!(
+        "Test context setup complete. Client DID: {}, Mediator DID: {}, Trust Registry DID: {}, In Pipeline: {}, Message Wait Duration: {} seconds",
+        client_did, mediator_did, trust_registry_did, in_pipeline, message_wait_duration_secs
+    );
     (
         AtmTestContext {
             atm,
@@ -215,7 +219,7 @@ async fn fetch_and_verify_response_with_retry(
 
         let problem_report_hashes: Vec<String> = unpacked_messages
             .iter()
-            .filter(|(msg, _)| msg.type_ == problem_report_type)
+            .filter(|(msg, _)| msg.typ == problem_report_type)
             .map(|(msg, meta)| {
                 if let Ok(json) = serde_json::to_string_pretty(&msg.body) {
                     println!("Received problem report: {}", json);
@@ -228,8 +232,8 @@ async fn fetch_and_verify_response_with_retry(
         }
 
         if let Some((msg, meta)) = unpacked_messages.into_iter().find(|(msg, _)| {
-            println!("Checking message type: {}", msg.type_);
-            msg.type_ == expected_message_type
+            println!("Checking message type: {}", msg.typ);
+            msg.typ == expected_message_type
         }) {
             let hash = meta.sha256_hash.clone();
             let atm = atm.clone();
@@ -627,7 +631,6 @@ async fn send_message(
             trust_registry_did,
             Some(&profile.inner.did),
             Some(&profile.inner.did),
-            None,
         )
         .await?;
 

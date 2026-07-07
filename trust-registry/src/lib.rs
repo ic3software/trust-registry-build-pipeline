@@ -9,6 +9,10 @@ pub mod domain;
 pub mod http;
 pub mod server;
 pub mod storage;
+pub mod trust_tasks;
+
+#[cfg(feature = "tsp")]
+pub mod tsp;
 
 pub struct SharedData<R>
 where

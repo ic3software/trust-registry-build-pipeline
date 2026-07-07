@@ -1,4 +1,7 @@
 #![cfg(feature = "dev-tools")]
+// `Protocols` is deprecated in affinidi-messaging-sdk 0.18 in favour of ATM
+// accessor methods; migrating this dev-only tool is a separate cleanup.
+#![allow(deprecated)]
 use affinidi_tdk::{
     TDK,
     common::{config::TDKConfig, profiles::TDKProfile},
@@ -140,13 +143,12 @@ pub async fn set_acl(alias: &str, did: &str, mediator_did: &str, secrets: Vec<Se
 
 pub fn create_did(service: Option<Vec<String>>, auth_service: bool) -> (String, Vec<Secret>) {
     let mut v_p256_key = Secret::generate_p256(None, None).expect("Couldn't create P256 secret");
-    let mut e_secp256k1_key =
-        Secret::generate_secp256k1(None, None).expect("Couldn't create Secp256k1 secret");
+    let mut e_p256_key = Secret::generate_p256(None, None).expect("Couldn't create P256 secret");
 
     let v_multibase = v_p256_key
         .get_public_keymultibase()
         .expect("Couldn't get verification key multibase");
-    let e_multibase = e_secp256k1_key
+    let e_multibase = e_p256_key
         .get_public_keymultibase()
         .expect("Couldn't get encryption key multibase");
 
@@ -188,9 +190,9 @@ pub fn create_did(service: Option<Vec<String>>, auth_service: bool) -> (String, 
     let did_peer_str = did_peer.to_string();
 
     v_p256_key.id = [did_peer_str.as_str(), "#key-1"].concat();
-    e_secp256k1_key.id = [did_peer_str.as_str(), "#key-2"].concat();
+    e_p256_key.id = [did_peer_str.as_str(), "#key-2"].concat();
 
-    (did_peer_str, vec![v_p256_key, e_secp256k1_key])
+    (did_peer_str, vec![v_p256_key, e_p256_key])
 }
 
 #[tokio::main]
