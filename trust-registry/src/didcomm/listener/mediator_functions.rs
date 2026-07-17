@@ -53,7 +53,7 @@ impl<H: MessageHandler> Listener<H> {
 
         let account_info = account_get_result?.ok_or(format!(
             "[profile = {}] Failed to get account info",
-            &self.profile.inner.alias
+            self.profile.inner.alias
         ))?;
 
         let mut acls = MediatorACLSet::from_u64(account_info.acls);
@@ -124,7 +124,7 @@ impl<H: MessageHandler> Listener<H> {
         let Some(tsp) = &self.tsp else {
             warn!(
                 "[profile = {}] TSP frame received but no TSP dispatcher is configured",
-                &self.profile.inner.alias
+                self.profile.inner.alias
             );
             return;
         };
@@ -134,6 +134,7 @@ impl<H: MessageHandler> Listener<H> {
         let admin_dids = tsp.admin_dids.clone();
         let verifier = tsp.verifier.clone();
         tokio::spawn(async move {
+            let dispatcher = dispatcher.read().await.clone();
             crate::tsp::process_tsp_frame(
                 &atm,
                 &profile,
@@ -162,12 +163,12 @@ impl<H: MessageHandler> Listener<H> {
 
         debug!(
             "[profile = {}] status_reply = {:?}",
-            &self.profile.inner.alias, status_reply
+            self.profile.inner.alias, status_reply
         );
         let messages_count = status_reply.map(|m| m.message_count).unwrap_or(0);
         info!(
             "[profile = {}] Messages received offline. messages_count = {}",
-            &self.profile.inner.alias, messages_count
+            self.profile.inner.alias, messages_count
         );
 
         if messages_count == 0 {
@@ -219,7 +220,7 @@ impl<H: MessageHandler> Listener<H> {
 
             debug!(
                 "[profile = {}] delivery_reply = {:?}",
-                &self.profile.inner.alias, offline_arrived_messages
+                self.profile.inner.alias, offline_arrived_messages
             );
 
             let ids: Vec<String> = offline_arrived_messages
@@ -247,18 +248,15 @@ impl<H: MessageHandler> Listener<H> {
 
         debug!(
             "[profile = {}] delete_messages_reply = {:?}",
-            &self.profile.inner.alias, delete_messages_reply
+            self.profile.inner.alias, delete_messages_reply
         );
 
         if delete_messages_reply.is_some() {
-            info!(
-                "[profile = {}] messages deleted.",
-                &self.profile.inner.alias
-            );
+            info!("[profile = {}] messages deleted.", self.profile.inner.alias);
         } else {
             warn!(
                 "[profile = {}] no status reply for messages received ack. Messages might be deleted or not",
-                &self.profile.inner.alias
+                self.profile.inner.alias
             );
         }
 
@@ -281,7 +279,7 @@ impl<H: MessageHandler> Listener<H> {
                         if let Err(e) = offline_messages_result {
                             error!(
                                 "[profile = {}] Error returned from offline_messages_result function. {}",
-                                &self.profile.inner.alias, e
+                                self.profile.inner.alias, e
                             );
                         }
                     }
